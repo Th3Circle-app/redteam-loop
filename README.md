@@ -1,0 +1,156 @@
+# redteam-loop
+
+An automated red-team loop that fires OWASP-classified attacks at a running
+target, triages what lands, proposes a minimal patch, and **verifies the patch
+actually closes the hole** before a human ever looks at it. The machine does the
+detection, classification, proposal, and verification. A person owns the merge.
+
+```bash
+npm install
+npm test          # 9 tests, real HTTP targets, no mocks
+npm run scan -- target.json
+```
+
+![redteam-loop scan output: eight findings across A01, A03, A05 and A08 against a
+live target](docs/img/scan.png)
+
+*A scan against a deliberately vulnerable target. Ten attacks fire, eight land,
+each already tagged with its OWASP 2021 category. `a03-sqli-tautology` and
+`a05-stack-trace` pass because that target happens to handle those correctly —
+the verdict is the response, not an assumption.*
+
+Built as the generalized, standalone version of the security work in
+[th3circle.app](https://th3circle.app) and
+[tenant-isolation-postgres](https://github.com/Th3Circle-app/tenant-isolation-postgres):
+tests that execute the exploit and assert it fails, extended into a loop that
+also proposes and checks the fix.
+
+---
+
+## What it is, honestly
+
+The tempting pitch is "an AI that autonomously patches production security
+holes." That is not what this is, and I would not run that against anything I
+cared about. Autonomous merge-to-prod on a security finding is how you turn one
+vulnerability into two.
+
+What this actually does is the defensible four-step version:
+
+```mermaid
+flowchart LR
+    A[Attack suite<br/>OWASP-classified] -->|fire at live target| B{Landed?}
+    B -->|refused| Z[control held]
+    B -->|landed| C[Triage<br/>dedup + severity]
+    C --> D[Propose patch<br/>Claude, minimal diff]
+    D --> E[Verify<br/>apply to a copy,<br/>re-run the one attack]
+    E -->|attack now refused| F[Open an issue<br/>with the diff]
+    E -->|still lands| C
+    F --> G((Human merges))
+```
+
+Detection is deterministic. Classification is built into each attack.
+The patch is a *proposal* on a throwaway copy of the file — the real repository
+is never written to and no PR is opened automatically. Verification re-runs the
+exact attack against the patched copy and only reports "closed" if it now fails.
+The output is an issue a person reviews and merges. That boundary is the point.
+
+---
+
+## The four stages
+
+### 1. Attacks — OWASP-classified payloads
+
+[`src/attacks/index.js`](src/attacks/index.js) is a library of requests a
+correct target refuses. Each carries its OWASP 2021 category and an `expect`
+predicate that defines "refused" for that specific attack:
+
+| OWASP 2021 | Attacks in the suite |
+|---|---|
+| **A01 · Broken Access Control** | unauthenticated call, forged `alg:none` token, path traversal, null-byte extension bypass |
+| **A03 · Injection** | reflected XSS, SQL tautology |
+| **A05 · Security Misconfiguration** | reflected-Origin CORS, wrong HTTP method, stack-trace leak |
+| **A08 · Data Integrity Failures** | client-supplied sender spoofing |
+
+A finding is never the model's opinion — it is the attack's own predicate
+applied to the real HTTP response.
+
+### 2. Runner — fire and record
+
+[`src/runner.js`](src/runner.js) makes each request against a live target and
+records whether the control held. Pure I/O; it knows nothing about patching.
+
+### 3. Triage → propose
+
+[`src/loop.js`](src/loop.js) dedups findings and sorts them high-severity first,
+then [`src/patch.js`](src/patch.js) asks Claude
+(`claude-opus-5`, adaptive thinking) for the **minimal unified diff** that closes
+one specific hole — instructed not to refactor, rename, or touch anything
+adjacent, and to prefer enforcing the control at the database or middleware layer
+over patching one handler. No key configured? The step degrades to "patch
+skipped" and the scan still runs.
+
+### 4. Verify — the part that matters
+
+[`src/apply.js`](src/apply.js) applies the proposed diff to a **throwaway copy**
+of the file using `git apply --check` (the same validation a reviewer's
+`git apply` runs), then the loop re-runs the one attack against a target serving
+the patched copy. "Closed" means the attack that just landed now fails. A diff
+that doesn't apply, or applies but doesn't close the hole, is reported as such —
+never waved through.
+
+---
+
+## The tests are the argument
+
+Every claim above has a test in [`tests/runner.test.js`](tests/runner.test.js)
+that runs against a real local HTTP server, not a mock:
+
+- the vulnerable target produces findings, each OWASP-classified
+- the **hardened** twin refuses the same attacks — so the suite distinguishes
+  broken from fixed, which is the whole job
+- a real hardening diff applies cleanly and a bogus diff is rejected
+- verify re-runs an attack after a fix and reports it closed
+
+```
+node --test
+ℹ tests 9   ℹ pass 9   ℹ fail 0
+```
+
+CI runs the suite on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+---
+
+## Targeting your own service
+
+`scan` and `loop` take a small JSON config:
+
+```json
+{
+  "baseUrl": "https://staging.your-service.example",
+  "authedPath": "/api/send",
+  "uploadPath": "/api/upload",
+  "echoPath": "/api/search",
+  "sourceMap": { "a01-no-token": "src/routes/send.js" }
+}
+```
+
+`sourceMap` tells the loop which file serves each attacked endpoint, so the patch
+step has something concrete to diff. Point it at **staging**, not production —
+the attacks are real requests.
+
+---
+
+## Layout
+
+```
+src/attacks/index.js   OWASP-classified payload library
+src/runner.js          fire an attack, record whether the control held
+src/loop.js            triage → propose → verify
+src/patch.js           Claude proposes a minimal diff (never applies it)
+src/apply.js           git apply --check against a throwaway copy
+src/report.js          render a finding + diff as a GitHub issue body
+src/cli.js             redteam scan | loop
+tests/                 the whole thing, against real local targets
+```
+
+MIT.
