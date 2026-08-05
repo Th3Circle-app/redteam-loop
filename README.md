@@ -104,12 +104,17 @@ The output is an issue a person reviews and merges. That boundary is the point.
 correct target refuses. Each carries its OWASP 2021 category and an `expect`
 predicate that defines "refused" for that specific attack:
 
-| OWASP 2021 | Attacks in the suite |
-|---|---|
-| **A01 · Broken Access Control** | unauthenticated call, forged `alg:none` token, path traversal, null-byte extension bypass |
-| **A03 · Injection** | reflected XSS, SQL tautology |
-| **A05 · Security Misconfiguration** | reflected-Origin CORS, wrong HTTP method, stack-trace leak |
-| **A08 · Data Integrity Failures** | client-supplied sender spoofing |
+| OWASP 2021 | Attacks in the suite | AppSec discipline |
+|---|---|---|
+| **A01 · Broken Access Control** | unauthenticated call, forged `alg:none` token, path traversal, null-byte extension bypass | Broken Object Level Authorization (BOLA) mitigation · input-validation testing |
+| **A03 · Injection** | reflected XSS, SQL tautology | Injection & input-validation testing |
+| **A05 · Security Misconfiguration** | reflected-Origin CORS, wrong HTTP method, stack-trace leak | Information-disclosure & attack-surface hardening |
+| **A08 · Data Integrity Failures** | client-supplied sender spoofing | Identity-forgery / request-integrity mitigation |
+
+This is a **DAST** tool — dynamic application security testing: it attacks a
+*running* service and judges it by the real response, the same way a pen-tester
+or a CI security gate does. (It is not SAST; it never inspects source to reach a
+verdict — only to propose the fix.)
 
 A finding is never the model's opinion — it is the attack's own predicate
 applied to the real HTTP response.
