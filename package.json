@@ -1,14 +1,19 @@
 {
   "name": "redteam-loop",
   "version": "0.1.0",
-  "description": "An AI DevSecOps loop: fires OWASP-classified attacks at a running target, triages what lands, proposes a patch, and verifies the patch actually closes it. Proposes only — a human merges.",
+  "description": "An AI DevSecOps loop: fires OWASP-classified attacks at a running target, triages what lands, proposes a patch, and verifies the patch actually closes it. Proposes only \u2014 a human merges.",
   "type": "module",
-  "bin": { "redteam": "./src/cli.js" },
+  "bin": {
+    "redteam": "./src/cli.js"
+  },
   "scripts": {
     "test": "node --test \"tests/**/*.test.js\"",
     "scan": "node src/cli.js scan",
-    "loop": "node src/cli.js loop"
+    "loop": "node src/cli.js loop",
+    "demo": "node examples/demo.mjs"
   },
-  "dependencies": { "@anthropic-ai/sdk": "^0.70.0" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  },
   "license": "MIT"
 }

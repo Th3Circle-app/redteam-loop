@@ -14,10 +14,24 @@ detection, classification, proposal, and verification. A person owns the merge.
 > and **re-runs the exact attack to confirm the fix** before opening an issue a
 > human merges.
 
+## Try it in 30 seconds
+
+No config, no key, no target of your own — the demo ships its own vulnerable
+service and attacks it:
+
 ```bash
+git clone https://github.com/Th3Circle-app/redteam-loop && cd redteam-loop
 npm install
+npm run demo
+```
+
+You'll see ten attacks fire, eight land, each tagged with its OWASP category.
+Set `ANTHROPIC_API_KEY` and re-run to watch Claude propose a fix for each finding
+and the loop verify it closes the hole.
+
+```bash
 npm test          # 11 tests, real HTTP targets, no mocks
-npm run scan -- target.json
+npm run scan -- target.json   # point it at your own staging service
 ```
 
 ![redteam-loop scan output: eight findings across A01, A03, A05 and A08 against a
