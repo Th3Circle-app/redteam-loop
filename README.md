@@ -7,7 +7,7 @@ detection, classification, proposal, and verification. A person owns the merge.
 
 ```bash
 npm install
-npm test          # 9 tests, real HTTP targets, no mocks
+npm test          # 11 tests, real HTTP targets, no mocks
 npm run scan -- target.json
 ```
 
@@ -18,6 +18,23 @@ live target](docs/img/scan.png)
 each already tagged with its OWASP 2021 category. `a03-sqli-tautology` and
 `a05-stack-trace` pass because that target happens to handle those correctly —
 the verdict is the response, not an assumption.*
+
+### The full loop, run for real
+
+`examples/live-loop.mjs` runs every stage against a live target with the real
+API. Below is one finding from an actual run: Claude proposed the auth gate, the
+loop applied it to a throwaway copy, re-ran the exact attack, and confirmed the
+endpoint now answers **401**. `3 verified closed` means three attacks that
+landed were re-run against the patched code and refused.
+
+![A verified finding: Claude's proposed auth-gate patch, re-run against the
+patched copy and refused with HTTP 401](docs/img/verified-issue.png)
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+node examples/live-loop.mjs
+# 8 findings · 3 with a proposed patch · 3 verified closed
+```
 
 Built as the generalized, standalone version of the security work in
 [th3circle.app](https://th3circle.app) and
@@ -113,7 +130,7 @@ that runs against a real local HTTP server, not a mock:
 
 ```
 node --test
-ℹ tests 9   ℹ pass 9   ℹ fail 0
+ℹ tests 11   ℹ pass 11   ℹ fail 0
 ```
 
 CI runs the suite on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
@@ -150,7 +167,19 @@ src/patch.js           Claude proposes a minimal diff (never applies it)
 src/apply.js           git apply --check against a throwaway copy
 src/report.js          render a finding + diff as a GitHub issue body
 src/cli.js             redteam scan | loop
+examples/live-loop.mjs full loop against a live target with the real API
 tests/                 the whole thing, against real local targets
 ```
+
+## A note on applying model diffs
+
+Language models reliably emit unified diffs with a **bare `@@` hunk header** and
+no line numbers, which `git apply` and `patch` both reject outright — the first
+live run lost three otherwise-correct patches to exactly this. Rather than nag
+the model for better formatting, [`src/apply.js`](src/apply.js) recomputes every
+hunk header from the source by locating the hunk's context, then applies the
+result with `git apply --check`. A hunk whose context isn't in the source
+**throws** — a diff that doesn't match is a failure, not something to massage
+into applying in the wrong place.
 
 MIT.

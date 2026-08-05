@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { scan, runAttack } from "../src/runner.js";
 import { triage, verify } from "../src/loop.js";
 import { attackById } from "../src/attacks/index.js";
-import { applyToCopy } from "../src/apply.js";
+import { applyToCopy, normalizeHunkHeaders } from "../src/apply.js";
 import { vulnerable, hardened, listen } from "./fixtures/target.js";
 
 function targetFor(baseUrl) {
@@ -113,6 +113,31 @@ describe("verify closes the loop", () => {
     const bad = "--- a/handler.js\n+++ b/handler.js\n@@ -99,1 +99,1 @@\n-nonexistent line\n+replacement\n";
     const applied = await applyToCopy(file, bad);
     assert.equal(applied.ok, false, "a diff that does not match must not apply");
+  });
+
+  test("a bare @@ hunk header (common model output) still applies", async () => {
+    // Models routinely omit line numbers. The normalizer recomputes them from
+    // the source so a correct change isn't lost to a cosmetic defect.
+    const file = { path: "h.js", source: "const a = 1;\nconst b = 2;\nconst c = 3;\n" };
+    const bareHeader = [
+      "--- a/h.js",
+      "+++ b/h.js",
+      "@@", // no line numbers — git apply would reject this outright
+      " const a = 1;",
+      "+const inserted = 99;",
+      " const b = 2;",
+      " const c = 3;",
+      "",
+    ].join("\n");
+    const applied = await applyToCopy(file, bareHeader);
+    assert.equal(applied.ok, true, applied.reason);
+    assert.match(applied.patchedSource, /const inserted = 99;/);
+    await applied.cleanup();
+  });
+
+  test("normalizeHunkHeaders throws when the context isn't in the source", () => {
+    const bad = "--- a/h.js\n+++ b/h.js\n@@\n missing context line\n+new\n";
+    assert.throws(() => normalizeHunkHeaders("const x = 1;\n", bad), /context not found/);
   });
 });
 
