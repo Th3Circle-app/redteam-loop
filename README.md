@@ -5,6 +5,15 @@ target, triages what lands, proposes a minimal patch, and **verifies the patch
 actually closes the hole** before a human ever looks at it. The machine does the
 detection, classification, proposal, and verification. A person owns the merge.
 
+> **Target** — any HTTP service; the reference target is a multi-tenant SaaS API.
+> **Security architecture** — controls enforced at the layer that can't be routed
+> around (database, middleware), then continuously attacked to prove they hold.
+> **The AI red-team loop** — an automated CI-ready system that injects malicious
+> payloads simulating real attacks, detects which controls fail, feeds the
+> offending source to Claude for a minimal patch, applies it to a throwaway copy,
+> and **re-runs the exact attack to confirm the fix** before opening an issue a
+> human merges.
+
 ```bash
 npm install
 npm test          # 11 tests, real HTTP targets, no mocks
@@ -114,6 +123,47 @@ of the file using `git apply --check` (the same validation a reviewer's
 the patched copy. "Closed" means the attack that just landed now fails. A diff
 that doesn't apply, or applies but doesn't close the hole, is reported as such —
 never waved through.
+
+The whole loop is small enough to read at a glance ([`src/loop.js`](src/loop.js)):
+
+```js
+for (const finding of triage(findings)) {
+  const file = resolveSource(finding);                 // the source that serves the hole
+  const { patch } = await proposePatch(finding, file); // Claude: minimal diff, unapplied
+  const verified = await verify(finding, file, patch); // apply to a copy, re-run the attack
+  items.push({ finding, patch, verified });            // report; a human merges
+}
+```
+
+`verify` is where the honesty lives — it re-fires the exact attack at the patched
+code and only reports `closed` when the response proves the control now holds:
+
+```js
+const applied = await applyToCopy(file, patch);        // throwaway copy, git apply --check
+if (!applied.ok) return { closed: false, reason: ... };
+const patchedTarget = await retarget(applied.dir);     // stand the fix up
+const res = await runAttack(attack, patchedTarget);    // fire the same payload again
+return { closed: res.held, status: res.status };       // held == the attack was refused
+```
+
+---
+
+## Real problems this solves
+
+- **RLS looks right and still leaks.** The reference target's whole reason for
+  existing: a Postgres tenant can pass a row-level-security check and still write
+  a column it shouldn't. A policy review misses it; an attack that tries the write
+  and asserts a refusal does not. This loop runs that attack on every push.
+- **A fix that doesn't actually fix.** "I added an auth check" is a claim. Re-running
+  the exact request that got in and watching it now return 401 is evidence. The
+  loop refuses to call anything closed without that second run.
+- **Security tests that pass no matter what.** A test asserting the right things
+  work says nothing about whether the wrong things are blocked. Every attack here
+  is a payload that *should* fail — the suite is the negative space most test
+  suites leave empty.
+- **Model patches that silently don't apply.** Real models emit diffs `git apply`
+  rejects. The loop normalizes and verifies them instead of trusting them, so a
+  proposed fix is either provably applied or loudly rejected.
 
 ---
 
