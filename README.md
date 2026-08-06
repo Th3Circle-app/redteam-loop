@@ -1,5 +1,7 @@
 # redteam-loop
 
+[![ci](https://github.com/Th3Circle-app/redteam-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/Th3Circle-app/redteam-loop/actions/workflows/ci.yml)
+
 An automated red-team loop that fires OWASP-classified attacks at a running
 target, triages what lands, proposes a minimal patch, and **verifies the patch
 actually closes the hole** before a human ever looks at it. The machine does the
